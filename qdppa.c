@@ -1,4 +1,18 @@
 #define _BSD_SOURCE
+#define _POSIX_SOURCE
+
+#define PORT           59481
+#define BUFF_SIZE       2048
+
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <signal.h>
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,55 +24,111 @@
 //#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
 
 struct value {
-    gint power;
+    gchar *power;
     gdouble timestamp;
 };
+
+int socket_fd;
 
 GArray *values;
 gboolean is_capturing = FALSE;
 
-gboolean update_label(gpointer label_numbers) {
-    gchar *buff;
-	int count;
+void init_connection() {
+    struct sockaddr_in servaddr;
+
+    if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        //perror("Problem creating the socket");
+        exit(EXIT_FAILURE);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(PORT);
+
+    //printf("Establishing connection to the server...\n");
+    if (connect(socket_fd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
+        //perror("Problem connecting to the server");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
+    }
+    
+    listen(socket_fd , 3);
+}
+
+void send_test() {
+    char sendline[BUFF_SIZE] = "";
+
+    //printf("Sending data to the server...\n");
+    sprintf(sendline, "%s", "Test");
+    if (send(socket_fd, sendline, strlen(sendline), 0) == 0) {
+        //perror("Could not send data to server.");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    //printf("Sent '%s' to server...\n", sendline);
+}
+
+void recv_test(char *buff) {
+    //printf("Receiving data from the server...\n");
+    if (recv(socket_fd, buff, BUFF_SIZE, 0) == 0) {
+        //perror("The server terminated prematurely.");
+        close(socket_fd);
+        exit(EXIT_FAILURE);
+    }
+    //printf("Received '%s' from server\n", buff);
+}
+
+gboolean update_labels(gpointer labels) {
+    gchar buff[BUFF_SIZE] = "";
+    gchar **arr_string;
+    GtkLabel *label_numbers;
+    GtkLabel *label_numbers_accuracy;
+    GtkLabel *label_power_unit;
     struct value val;
     struct timeval tv;
+	
+    label_numbers = g_object_get_data(G_OBJECT(labels), "label_numbers");
+    label_numbers_accuracy = g_object_get_data(G_OBJECT(labels), "label_numbers_accuracy");
+    label_power_unit = g_object_get_data(G_OBJECT(labels), "label_power_unit");
     
-	count = atoi(gtk_label_get_text(label_numbers)) + 1;
+    send_test();
+    recv_test(buff);
+    arr_string = g_strsplit(buff, "|", 0);
+	gtk_label_set_text(label_numbers, arr_string[0]);
+	gtk_label_set_text(label_numbers_accuracy, arr_string[1]);
+	gtk_label_set_text(label_power_unit, arr_string[2]);
+	
 	gettimeofday(&tv, NULL);
 	
-	val.power = count;
+	val.power = g_strconcat(arr_string[0], ".", arr_string[1], " ", arr_string[2], NULL);
     val.timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
 	
-    buff = g_strdup_printf ("%d", count);
-	gtk_label_set_text(label_numbers, buff);
+	g_strfreev(arr_string);
 
     if(is_capturing)
         g_array_append_val(values, val);
-    
-    g_free(buff);
-
-	if (count < 5000)
-		return TRUE;
-	else
-		return FALSE;
+        
+    return TRUE;
 }
 
 void start_stop_listen_usb(GtkWidget *widget, gpointer data) {
 	static gint func_ref = 0;
-	GtkWidget *label_numbers;
 	GtkWidget *toggle_button_usd;
 
-	label_numbers = g_object_get_data(G_OBJECT(widget), "label_numbers");
 	toggle_button_usd = g_object_get_data(G_OBJECT(widget), "toggle_button_usd");
 
 	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
 	    gtk_widget_set_sensitive(toggle_button_usd, TRUE);
-		func_ref = g_timeout_add(150, update_label, GTK_LABEL(label_numbers));
+	    init_connection();
+		func_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
 	} else {
 	    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle_button_usd))) {
 	        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_button_usd), FALSE);
 	    }
 	    gtk_widget_set_sensitive(toggle_button_usd, FALSE);
+	    close(socket_fd);
 		g_source_remove(func_ref);
 	}
 }
@@ -71,7 +141,7 @@ void create_csv_file() {
         val = g_array_index(values, struct value, i);
         
         gchar *time_value = g_strdup_printf("%f", val.timestamp);
-        gchar *power_value = g_strdup_printf("%d", val.power);
+        gchar *power_value = g_strdup_printf("%s", val.power);
         
 	    csv_set_field(my_buffer, i, 0, time_value);
 	    csv_set_field(my_buffer, i, 1, power_value);
@@ -134,6 +204,8 @@ void init_gui() {
     GtkWidget *hbox_buttons;
     GtkWidget *label_power;
     GtkWidget *label_numbers;
+    GtkWidget *label_numbers_separator;
+    GtkWidget *label_numbers_accuracy;
     GtkWidget *label_power_unit;
     GtkWidget *button_close;
     GtkWidget *toggle_button_capture;
@@ -145,7 +217,7 @@ void init_gui() {
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 230, 250);
     gtk_container_set_border_width(GTK_CONTAINER(window), 5);
-    gtk_window_maximize(GTK_WINDOW(window));
+    //gtk_window_maximize(GTK_WINDOW(window));
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     
     vbox_main = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
@@ -159,10 +231,14 @@ void init_gui() {
     gtk_box_pack_start(GTK_BOX(vbox_main), hbox_buttons, TRUE, TRUE, 0);
     
     label_power = gtk_label_new("Power");
-    label_numbers = gtk_label_new("1");
+    label_numbers = gtk_label_new("00000");
+    label_numbers_separator = gtk_label_new(".");
+    label_numbers_accuracy = gtk_label_new("00");
     label_power_unit = gtk_label_new("W");
     gtk_box_pack_start(GTK_BOX(hbox_labels), label_power, TRUE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers, TRUE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers_separator, TRUE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers_accuracy, TRUE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(hbox_labels), label_power_unit, TRUE, FALSE, 0);
     
     toggle_button_usd = gtk_toggle_button_new_with_label("Write to SD Card");
@@ -177,6 +253,8 @@ void init_gui() {
     gtk_widget_set_halign(button_close, GTK_ALIGN_END);
     
     g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers", (gpointer) label_numbers);
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers_accuracy", (gpointer) label_numbers_accuracy);
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_power_unit", (gpointer) label_power_unit);
     g_object_set_data(G_OBJECT(toggle_button_capture), "toggle_button_usd", (gpointer) toggle_button_usd);
 
     g_signal_connect(G_OBJECT(button_close), "clicked", G_CALLBACK(gtk_main_quit), NULL);
