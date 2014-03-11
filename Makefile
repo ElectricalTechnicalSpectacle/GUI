@@ -4,7 +4,7 @@ CC       = gcc
 CC_ARM   = arm-linux-gnueabi-gcc
 CFLAGS   = `pkg-config --cflags gtk+-3.0` -g -std=c99 -Wall
 LDFLAGS  = `pkg-config --libs gtk+-3.0` -g 
-IP_BGLBN = 10.0.0.6
+IP_BGLBN = 192.168.7.2
 
 all: intel
 

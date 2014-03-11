@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <signal.h>
-
+#include <fcntl.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,25 +20,47 @@
 #include <sys/time.h>
 #include "csv.h"
 
-#define MEMORY_FILE_PATH    "/media/MICROSD/"
-//#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
+//#define MEMORY_FILE_PATH    "/media/MICROSD/"
+#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
 
 struct value {
     gchar *power;
+    gchar *power_unit;
+    gchar *voltage;
+    gchar *voltage_unit;
+    gchar *current;
+    gchar *current_unit;
     gdouble timestamp;
 };
+
+struct reading {
+    gchar *numbers_power;
+    gchar *numbers_accuracy_power;
+    gchar *power_unit;
+    
+    gchar *numbers_voltage;
+    gchar *numbers_accuracy_voltage;
+    gchar *voltage_unit;
+    
+    gchar *numbers_current;
+    gchar *numbers_accuracy_current;
+    gchar *current_unit;
+};
+
+struct reading last_reading;
 
 int socket_fd;
 
 GArray *values;
 gboolean is_capturing = FALSE;
+gboolean is_listening = FALSE;
 
-void init_connection() {
+gboolean init_connection() {
     struct sockaddr_in servaddr;
 
     if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         //perror("Problem creating the socket");
-        exit(EXIT_FAILURE);
+        return FALSE;
     }
 
     memset(&servaddr, 0, sizeof(servaddr));
@@ -50,86 +72,190 @@ void init_connection() {
     if (connect(socket_fd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
         //perror("Problem connecting to the server");
         close(socket_fd);
-        exit(EXIT_FAILURE);
+        return FALSE;
     }
     
     listen(socket_fd , 3);
+    return TRUE;
 }
 
-void send_test() {
+void send_test(gchar *command) {
     char sendline[BUFF_SIZE] = "";
-
-    //printf("Sending data to the server...\n");
-    sprintf(sendline, "%s", "Test");
+    sprintf(sendline, "%s", command);
     if (send(socket_fd, sendline, strlen(sendline), 0) == 0) {
         //perror("Could not send data to server.");
         close(socket_fd);
         exit(EXIT_FAILURE);
     }
-
-    //printf("Sent '%s' to server...\n", sendline);
 }
 
 void recv_test(char *buff) {
-    //printf("Receiving data from the server...\n");
     if (recv(socket_fd, buff, BUFF_SIZE, 0) == 0) {
         //perror("The server terminated prematurely.");
         close(socket_fd);
         exit(EXIT_FAILURE);
     }
-    //printf("Received '%s' from server\n", buff);
 }
 
 gboolean update_labels(gpointer labels) {
-    gchar buff[BUFF_SIZE] = "";
-    gchar **arr_string;
     GtkLabel *label_numbers;
+    GtkLabel *label_numbers_voltage;
+    GtkLabel *label_numbers_current;
     GtkLabel *label_numbers_accuracy;
+    GtkLabel *label_numbers_accuracy_voltage;
+    GtkLabel *label_numbers_accuracy_current;
     GtkLabel *label_power_unit;
-    struct value val;
-    struct timeval tv;
+    GtkLabel *label_voltage_unit;
+    GtkLabel *label_current_unit;
 	
     label_numbers = g_object_get_data(G_OBJECT(labels), "label_numbers");
+    label_numbers_voltage = g_object_get_data(G_OBJECT(labels), "label_numbers_voltage");
+    label_numbers_current = g_object_get_data(G_OBJECT(labels), "label_numbers_current");
     label_numbers_accuracy = g_object_get_data(G_OBJECT(labels), "label_numbers_accuracy");
+    label_numbers_accuracy_voltage = g_object_get_data(G_OBJECT(labels), "label_numbers_accuracy_voltage");
+    label_numbers_accuracy_current = g_object_get_data(G_OBJECT(labels), "label_numbers_accuracy_current");
     label_power_unit = g_object_get_data(G_OBJECT(labels), "label_power_unit");
+    label_voltage_unit = g_object_get_data(G_OBJECT(labels), "label_voltage_unit");
+    label_current_unit = g_object_get_data(G_OBJECT(labels), "label_current_unit");
     
-    send_test();
-    recv_test(buff);
-    arr_string = g_strsplit(buff, "|", 0);
-	gtk_label_set_text(label_numbers, arr_string[0]);
-	gtk_label_set_text(label_numbers_accuracy, arr_string[1]);
-	gtk_label_set_text(label_power_unit, arr_string[2]);
-	
-	gettimeofday(&tv, NULL);
-	
-	val.power = g_strconcat(arr_string[0], ".", arr_string[1], " ", arr_string[2], NULL);
-    val.timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
-	
-	g_strfreev(arr_string);
-
-    if(is_capturing)
-        g_array_append_val(values, val);
+    gtk_label_set_text(label_numbers, last_reading.numbers_power);
+    gtk_label_set_text(label_numbers_voltage, last_reading.numbers_voltage);
+    gtk_label_set_text(label_numbers_current, last_reading.numbers_current);    
+    gtk_label_set_text(label_numbers_accuracy, last_reading.numbers_accuracy_power);
+    gtk_label_set_text(label_numbers_accuracy_voltage, last_reading.numbers_accuracy_voltage);
+    gtk_label_set_text(label_numbers_accuracy_current, last_reading.numbers_accuracy_current);
+    gtk_label_set_text(label_power_unit, last_reading.power_unit);
+    gtk_label_set_text(label_voltage_unit, last_reading.voltage_unit);
+    gtk_label_set_text(label_current_unit, last_reading.current_unit);
         
+    g_free(last_reading.numbers_power);
+    g_free(last_reading.numbers_voltage);
+    g_free(last_reading.numbers_current);
+    g_free(last_reading.numbers_accuracy_power);
+    g_free(last_reading.numbers_accuracy_voltage);
+    g_free(last_reading.numbers_accuracy_current);
+    g_free(last_reading.power_unit);
+    g_free(last_reading.voltage_unit);
+    g_free(last_reading.current_unit);
+
+    return TRUE;
+}
+
+gboolean listen_for_data() {
+    gchar buff[BUFF_SIZE] = "";
+    gchar **arr_string;
+    gchar **full_readings;
+    gchar **individual_reading;
+    gchar **voltage_reading;
+    gchar **current_reading;
+    gchar **power_reading;
+    gchar *command = "";
+        
+    struct value val;
+    struct timeval tv;
+    
+    command = "get";
+    send_test(command);
+    recv_test(buff);
+    
+    if (g_strcmp0(buff, "") != 0 && g_strcmp0(buff, "empty") != 0) {
+        arr_string = g_strsplit(buff, "|", 0);
+        full_readings = g_strsplit(arr_string[1], "~", 0);
+        for(int i = 0; i < atoi(arr_string[0]); i++) {
+            individual_reading = g_strsplit(full_readings[i], "&", 0);
+            
+            voltage_reading = g_strsplit(individual_reading[0], ",", 0);
+            current_reading = g_strsplit(individual_reading[1], ",", 0);
+            power_reading = g_strsplit(individual_reading[2], ",", 0);
+            
+    
+	        gettimeofday(&tv, NULL);
+	
+	        val.power = g_strconcat(power_reading[0], ".", power_reading[1], " ", power_reading[2], NULL);
+            val.timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
+
+            if(is_capturing)
+                g_array_append_val(values, val);
+            
+        }
+        last_reading.numbers_power = g_strdup(power_reading[0]);
+        last_reading.numbers_voltage = g_strdup(voltage_reading[0]);
+        last_reading.numbers_current = g_strdup(current_reading[0]);
+        
+        last_reading.numbers_accuracy_power = g_strdup(power_reading[1]);
+        last_reading.numbers_accuracy_voltage = g_strdup(voltage_reading[1]);
+        last_reading.numbers_accuracy_current = g_strdup(current_reading[1]);
+        
+        last_reading.power_unit = g_strdup(power_reading[2]);
+        last_reading.voltage_unit = g_strdup(voltage_reading[2]);
+        last_reading.current_unit = g_strdup(current_reading[2]);
+        
+        g_strfreev(arr_string);
+        g_strfreev(full_readings);
+        g_strfreev(individual_reading);
+        g_strfreev(voltage_reading);
+        g_strfreev(current_reading);
+        g_strfreev(power_reading);
+        
+    } else {
+        last_reading.numbers_power = g_strdup("0");
+        last_reading.numbers_voltage = g_strdup("0");
+        last_reading.numbers_current = g_strdup("0");
+        
+        last_reading.numbers_accuracy_power = g_strdup("0");
+        last_reading.numbers_accuracy_voltage = g_strdup("0");
+        last_reading.numbers_accuracy_current = g_strdup("0");
+        
+        last_reading.power_unit = g_strdup("W");
+        last_reading.voltage_unit = g_strdup("V");
+        last_reading.current_unit = g_strdup("A");
+    }
     return TRUE;
 }
 
 void start_stop_listen_usb(GtkWidget *widget, gpointer data) {
-	static gint func_ref = 0;
+	static gint func_update_ref = 0;
+	static gint func_listen_ref = 0;
+	gboolean connection_status = TRUE;
 	GtkWidget *toggle_button_usd;
-
+    GtkWidget *window;
+    GtkWidget *dialog;
+    
 	toggle_button_usd = g_object_get_data(G_OBJECT(widget), "toggle_button_usd");
 
 	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
-	    gtk_widget_set_sensitive(toggle_button_usd, TRUE);
-	    init_connection();
-		func_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
+	    connection_status = init_connection();
+	    if(connection_status){
+	        is_listening = TRUE;
+	        gtk_widget_set_sensitive(toggle_button_usd, TRUE);
+	        func_listen_ref = g_timeout_add(1, listen_for_data, G_OBJECT(widget));
+		    func_update_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
+	    } else {
+	        is_listening = FALSE;
+            window = gtk_widget_get_toplevel(widget);
+            dialog = gtk_message_dialog_new(GTK_WINDOW(window),
+                                            GTK_DIALOG_DESTROY_WITH_PARENT,
+                                            GTK_MESSAGE_ERROR,
+                                            GTK_BUTTONS_CLOSE,
+                                            "Error establishing socket communication");
+            gtk_dialog_run(GTK_DIALOG(dialog));
+            gtk_widget_destroy(dialog);
+	    	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+	            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+	        }
+	    }
 	} else {
 	    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle_button_usd))) {
 	        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_button_usd), FALSE);
 	    }
 	    gtk_widget_set_sensitive(toggle_button_usd, FALSE);
-	    close(socket_fd);
-		g_source_remove(func_ref);
+	    if (is_listening)
+	        close(socket_fd);
+	    
+	    if (func_listen_ref)
+	        g_source_remove(func_listen_ref);
+	    if (func_update_ref)
+	        g_source_remove(func_update_ref);
 	}
 }
 
@@ -202,14 +328,43 @@ void init_gui() {
     GtkWidget *vbox_main;
     GtkWidget *hbox_labels;
     GtkWidget *hbox_buttons;
+    GtkWidget *hbox_labels_voltage;
+    GtkWidget *hbox_labels_current;
     GtkWidget *label_power;
+    GtkWidget *label_voltage;
+    GtkWidget *label_current;
+    
     GtkWidget *label_numbers;
     GtkWidget *label_numbers_separator;
     GtkWidget *label_numbers_accuracy;
     GtkWidget *label_power_unit;
+    
+    GtkWidget *label_numbers_voltage;
+    GtkWidget *label_numbers_separator_voltage;
+    GtkWidget *label_numbers_accuracy_voltage;
+    GtkWidget *label_voltage_unit;
+    
+    GtkWidget *label_numbers_current;
+    GtkWidget *label_numbers_separator_current;
+    GtkWidget *label_numbers_accuracy_current;
+    GtkWidget *label_current_unit;
+    
+    
     GtkWidget *button_close;
     GtkWidget *toggle_button_capture;
     GtkWidget *toggle_button_usd;
+    
+    PangoAttrList *attrs_power = pango_attr_list_new();
+    PangoAttrList *attrs_voltage_current = pango_attr_list_new();
+    
+    PangoAttribute *attr_weight = pango_attr_weight_new(PANGO_WEIGHT_BOLD);
+    PangoAttribute *attr_size = pango_attr_size_new(14*PANGO_SCALE);
+    PangoAttribute *attr_size_voltage_current = pango_attr_size_new(12*PANGO_SCALE);
+    
+    pango_attr_list_insert (attrs_power, attr_weight);
+    pango_attr_list_insert (attrs_power, attr_size);
+    
+    pango_attr_list_insert (attrs_voltage_current, attr_size_voltage_current);
 
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     
@@ -224,22 +379,66 @@ void init_gui() {
     gtk_container_add(GTK_CONTAINER(window), vbox_main);
     
     hbox_labels = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    hbox_labels_voltage = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    hbox_labels_current = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     hbox_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     gtk_widget_set_valign(hbox_buttons, GTK_ALIGN_END);
     gtk_widget_set_valign(hbox_labels, GTK_ALIGN_START);
+    gtk_widget_set_valign(hbox_labels_voltage, GTK_ALIGN_START);
+    gtk_widget_set_valign(hbox_labels_current, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(vbox_main), hbox_labels, TRUE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox_main), hbox_labels_voltage, TRUE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox_main), hbox_labels_current, TRUE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(vbox_main), hbox_buttons, TRUE, TRUE, 0);
     
-    label_power = gtk_label_new("Power");
+    label_power = gtk_label_new("Power: ");
+    gtk_label_set_attributes (GTK_LABEL(label_power), attrs_power);
     label_numbers = gtk_label_new("00000");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers), attrs_power);
     label_numbers_separator = gtk_label_new(".");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_separator), attrs_power);
     label_numbers_accuracy = gtk_label_new("00");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_accuracy), attrs_power);
     label_power_unit = gtk_label_new("W");
-    gtk_box_pack_start(GTK_BOX(hbox_labels), label_power, TRUE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers, TRUE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers_separator, TRUE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers_accuracy, TRUE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(hbox_labels), label_power_unit, TRUE, FALSE, 0);
+    gtk_label_set_attributes (GTK_LABEL(label_power_unit), attrs_power);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_power, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers_separator, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_numbers_accuracy, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels), label_power_unit, FALSE, FALSE, 30);
+    
+    label_voltage = gtk_label_new("Voltage: ");
+    gtk_label_set_attributes (GTK_LABEL(label_voltage), attrs_voltage_current);
+    label_numbers_voltage = gtk_label_new("00000");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_voltage), attrs_voltage_current);
+    label_numbers_separator_voltage = gtk_label_new(".");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_separator_voltage), attrs_voltage_current);
+    label_numbers_accuracy_voltage = gtk_label_new("00");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_accuracy_voltage), attrs_voltage_current);
+    label_voltage_unit = gtk_label_new("V");
+    gtk_label_set_attributes (GTK_LABEL(label_voltage_unit), attrs_voltage_current);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_voltage), label_voltage, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_voltage), label_numbers_voltage, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_voltage), label_numbers_separator_voltage, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_voltage), label_numbers_accuracy_voltage, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_voltage), label_voltage_unit, FALSE, FALSE, 30);
+    
+    label_current = gtk_label_new("Current: ");
+    gtk_label_set_attributes (GTK_LABEL(label_current), attrs_voltage_current);
+    label_numbers_current = gtk_label_new("00000");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_current), attrs_voltage_current);
+    label_numbers_separator_current = gtk_label_new(".");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_separator_current), attrs_voltage_current);
+    label_numbers_accuracy_current = gtk_label_new("00");
+    gtk_label_set_attributes (GTK_LABEL(label_numbers_accuracy_current), attrs_voltage_current);
+    label_current_unit = gtk_label_new("A");
+    gtk_label_set_attributes (GTK_LABEL(label_current_unit), attrs_voltage_current);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_current), label_current, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_current), label_numbers_current, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_current), label_numbers_separator_current, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_current), label_numbers_accuracy_current, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox_labels_current), label_current_unit, FALSE, FALSE, 30);
+    
     
     toggle_button_usd = gtk_toggle_button_new_with_label("Write to SD Card");
     gtk_widget_set_sensitive(toggle_button_usd, FALSE);
@@ -255,6 +454,17 @@ void init_gui() {
     g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers", (gpointer) label_numbers);
     g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers_accuracy", (gpointer) label_numbers_accuracy);
     g_object_set_data(G_OBJECT(toggle_button_capture), "label_power_unit", (gpointer) label_power_unit);
+    
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers_current", (gpointer) label_numbers_current);
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers_accuracy_current", (gpointer) label_numbers_accuracy_current);
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_current_unit", (gpointer) label_current_unit);
+    
+    
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers_voltage", (gpointer) label_numbers_voltage);
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_numbers_accuracy_voltage", (gpointer) label_numbers_accuracy_voltage);
+    g_object_set_data(G_OBJECT(toggle_button_capture), "label_voltage_unit", (gpointer) label_voltage_unit);
+    
+    
     g_object_set_data(G_OBJECT(toggle_button_capture), "toggle_button_usd", (gpointer) toggle_button_usd);
 
     g_signal_connect(G_OBJECT(button_close), "clicked", G_CALLBACK(gtk_main_quit), NULL);
