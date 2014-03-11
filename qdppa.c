@@ -372,7 +372,7 @@ void init_gui() {
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 230, 250);
     gtk_container_set_border_width(GTK_CONTAINER(window), 5);
-    //gtk_window_maximize(GTK_WINDOW(window));
+    gtk_window_maximize(GTK_WINDOW(window));
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
     
     vbox_main = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
