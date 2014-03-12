@@ -25,12 +25,8 @@
 
 struct value {
     gchar *power;
-    gchar *power_unit;
     gchar *voltage;
-    gchar *voltage_unit;
     gchar *current;
-    gchar *current_unit;
-    gdouble timestamp;
 };
 
 struct reading {
@@ -172,7 +168,8 @@ gboolean listen_for_data() {
 	        gettimeofday(&tv, NULL);
 	
 	        val.power = g_strconcat(power_reading[0], ".", power_reading[1], " ", power_reading[2], NULL);
-            val.timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000;
+	        val.voltage = g_strconcat(voltage_reading[0], ".", voltage_reading[1], " ", voltage_reading[2], NULL);
+	        val.current = g_strconcat(current_reading[0], ".", current_reading[1], " ", current_reading[2], NULL);
 
             if(is_capturing)
                 g_array_append_val(values, val);
@@ -266,14 +263,17 @@ void create_csv_file() {
         struct value val;
         val = g_array_index(values, struct value, i);
         
-        gchar *time_value = g_strdup_printf("%f", val.timestamp);
         gchar *power_value = g_strdup_printf("%s", val.power);
+        gchar *voltage_value = g_strdup_printf("%s", val.voltage);
+        gchar *current_value = g_strdup_printf("%s", val.current);
         
-	    csv_set_field(my_buffer, i, 0, time_value);
-	    csv_set_field(my_buffer, i, 1, power_value);
+	    csv_set_field(my_buffer, i, 0, power_value);
+	    csv_set_field(my_buffer, i, 1, voltage_value);
+	    csv_set_field(my_buffer, i, 2, current_value);
 	    
-	    g_free(time_value);
-        g_free(power_value);
+	    g_free(power_value);
+        g_free(voltage_value);
+        g_free(current_value);
     }
     
     int count = 0;
