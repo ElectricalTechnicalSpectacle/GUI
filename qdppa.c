@@ -154,7 +154,7 @@ gboolean listen_for_data() {
     send_test(command);
     recv_test(buff);
     
-    if (g_strcmp0(buff, "") != 0 && g_strcmp0(buff, "empty") != 0) {
+    if (g_strcmp0(buff, "") != 0) {
         g_print("Buff: %s\n", buff);
         arr_string = g_strsplit(buff, "|", 0);
         full_readings = g_strsplit(arr_string[1], "~", 0);
@@ -194,7 +194,6 @@ gboolean listen_for_data() {
         g_strfreev(voltage_reading);
         g_strfreev(current_reading);
         g_strfreev(power_reading);
-        
     } else {
         last_reading.numbers_power = g_strdup("0");
         last_reading.numbers_voltage = g_strdup("0");
