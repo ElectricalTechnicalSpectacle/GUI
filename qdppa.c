@@ -20,13 +20,14 @@
 #include <sys/time.h>
 #include "csv.h"
 
-#define MEMORY_FILE_PATH    "/media/MICROSD/"
-//#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
+//#define MEMORY_FILE_PATH    "/media/MICROSD/"
+#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
 
 struct value {
     gchar *power;
     gchar *voltage;
     gchar *current;
+    gchar *state;
 };
 
 struct reading {
@@ -148,14 +149,12 @@ gboolean listen_for_data() {
     gchar *command = "";
         
     struct value val;
-    struct timeval tv;
     
     command = "get";
     send_test(command);
     recv_test(buff);
     
     if (g_strcmp0(buff, "") != 0) {
-        g_print("Buff: %s\n", buff);
         arr_string = g_strsplit(buff, "|", 0);
         full_readings = g_strsplit(arr_string[1], "~", 0);
         for(int i = 0; i < atoi(arr_string[0]); i++) {
@@ -164,17 +163,15 @@ gboolean listen_for_data() {
             voltage_reading = g_strsplit(individual_reading[0], ",", 0);
             current_reading = g_strsplit(individual_reading[1], ",", 0);
             power_reading = g_strsplit(individual_reading[2], ",", 0);
-            
-    
-	        gettimeofday(&tv, NULL);
-	
-	        val.power = g_strconcat(power_reading[0], ".", power_reading[1], " ", power_reading[2], NULL);
-	        val.voltage = g_strconcat(voltage_reading[0], ".", voltage_reading[1], " ", voltage_reading[2], NULL);
-	        val.current = g_strconcat(current_reading[0], ".", current_reading[1], " ", current_reading[2], NULL);
-
-            if(is_capturing)
+	        
+	        if (is_capturing) {
+	            val.power = g_strconcat(power_reading[0], ".", power_reading[1], " ", power_reading[2], NULL);
+	            val.voltage = g_strconcat(voltage_reading[0], ".", voltage_reading[1], " ", voltage_reading[2], NULL);
+	            val.current = g_strconcat(current_reading[0], ".", current_reading[1], " ", current_reading[2], NULL);
+	            val.state = g_strdup(individual_reading[3]);
+                
                 g_array_append_val(values, val);
-            
+            }
         }
         last_reading.numbers_power = g_strdup(power_reading[0]);
         last_reading.numbers_voltage = g_strdup(voltage_reading[0]);
@@ -266,14 +263,22 @@ void create_csv_file() {
         gchar *power_value = g_strdup_printf("%s", val.power);
         gchar *voltage_value = g_strdup_printf("%s", val.voltage);
         gchar *current_value = g_strdup_printf("%s", val.current);
+        gchar *state_value = g_strdup_printf("%s", val.state);
         
 	    csv_set_field(my_buffer, i, 0, power_value);
 	    csv_set_field(my_buffer, i, 1, voltage_value);
 	    csv_set_field(my_buffer, i, 2, current_value);
+	    csv_set_field(my_buffer, i, 3, state_value);
 	    
 	    g_free(power_value);
         g_free(voltage_value);
         g_free(current_value);
+        g_free(state_value);
+        
+        g_free(val.power);
+        g_free(val.voltage);
+        g_free(val.current);
+        g_free(val.state);
     }
     
     int count = 0;
