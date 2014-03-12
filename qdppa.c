@@ -2,7 +2,7 @@
 #define _POSIX_SOURCE
 
 #define PORT           59481
-#define BUFF_SIZE       65536
+#define BUFF_SIZE       1048576
 
 #include <string.h>
 #include <stdio.h>
