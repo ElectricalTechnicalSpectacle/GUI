@@ -225,7 +225,7 @@ void start_stop_listen_usb(GtkWidget *widget, gpointer data) {
 	    if(connection_status){
 	        is_listening = TRUE;
 	        gtk_widget_set_sensitive(toggle_button_usd, TRUE);
-	        func_listen_ref = g_timeout_add(50, listen_for_data, G_OBJECT(widget));
+	        func_listen_ref = g_timeout_add(100, listen_for_data, G_OBJECT(widget));
 		    func_update_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
 	    } else {
 	        is_listening = FALSE;
