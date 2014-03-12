@@ -20,8 +20,8 @@
 #include <sys/time.h>
 #include "csv.h"
 
-//#define MEMORY_FILE_PATH    "/media/MICROSD/"
-#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
+#define MEMORY_FILE_PATH    "/media/MICROSD/"
+//#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA/"
 
 struct value {
     gchar *power;
