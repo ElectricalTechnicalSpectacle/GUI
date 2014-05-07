@@ -259,7 +259,7 @@ void start_stop_listen_usb(GtkWidget *widget, gpointer data) {
                                                 GTK_DIALOG_DESTROY_WITH_PARENT,
                                                 GTK_MESSAGE_ERROR,
                                                 GTK_BUTTONS_CLOSE,
-                                                "Error establishing socket communication");
+                                                "Error establishing socket");
                 gtk_dialog_run(GTK_DIALOG(dialog));
                 gtk_widget_destroy(dialog);
             	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
