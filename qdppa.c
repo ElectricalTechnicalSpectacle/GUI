@@ -76,6 +76,31 @@ gboolean init_connection() {
     return TRUE;
 }
 
+gboolean init_usb_server() {
+    FILE *fp;
+    int i = 0;
+    char out[1024];
+
+    //fp = popen("/home/debian/usb/usb_test.py", "r");
+    fp = popen("ls -a /etc/", "r");
+    
+    if (fp == NULL)
+        return FALSE;
+
+    /* Read the output a line at a time or if it reaches 5 lines */
+    while (fgets(out, sizeof(out)-1, fp) != NULL && i < 6) {
+        if (g_ascii_strncasecmp(out, "Listening for incoming connections...", 37) == 0) {
+            pclose(fp);
+            return TRUE;
+        }
+        i++;
+    }
+
+    /* close */
+    pclose(fp);
+    return FALSE;
+}
+
 void send_test(gchar *command) {
     char sendline[BUFF_SIZE] = "";
     sprintf(sendline, "%s", command);
@@ -211,6 +236,7 @@ void start_stop_listen_usb(GtkWidget *widget, gpointer data) {
 	static gint func_update_ref = 0;
 	static gint func_listen_ref = 0;
 	gboolean connection_status = TRUE;
+	gboolean usb_status = 0;
 	GtkWidget *toggle_button_usd;
     GtkWidget *window;
     GtkWidget *dialog;
@@ -219,25 +245,33 @@ void start_stop_listen_usb(GtkWidget *widget, gpointer data) {
 
 	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
 	    connection_status = init_connection();
-	    if(connection_status){
-	        is_listening = TRUE;
-	        gtk_widget_set_sensitive(toggle_button_usd, TRUE);
-	        func_listen_ref = g_timeout_add(50, listen_for_data, G_OBJECT(widget));
-		    func_update_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
-	    } else {
-	        is_listening = FALSE;
-            window = gtk_widget_get_toplevel(widget);
-            dialog = gtk_message_dialog_new(GTK_WINDOW(window),
-                                            GTK_DIALOG_DESTROY_WITH_PARENT,
-                                            GTK_MESSAGE_ERROR,
-                                            GTK_BUTTONS_CLOSE,
-                                            "Error establishing socket communication");
-            gtk_dialog_run(GTK_DIALOG(dialog));
-            gtk_widget_destroy(dialog);
-	    	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
-	            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
-	        }
-	    }
+        if(connection_status){
+            is_listening = TRUE;
+            gtk_widget_set_sensitive(toggle_button_usd, TRUE);
+            func_listen_ref = g_timeout_add(50, listen_for_data, G_OBJECT(widget));
+	        func_update_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
+        } else {
+            usb_status = init_usb_server();
+            if (!usb_status) {
+                is_listening = FALSE;
+                window = gtk_widget_get_toplevel(widget);
+                dialog = gtk_message_dialog_new(GTK_WINDOW(window),
+                                                GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                GTK_MESSAGE_ERROR,
+                                                GTK_BUTTONS_CLOSE,
+                                                "Error establishing socket communication");
+                gtk_dialog_run(GTK_DIALOG(dialog));
+                gtk_widget_destroy(dialog);
+            	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget))) {
+                    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(widget), FALSE);
+                }
+            } else {
+                is_listening = TRUE;
+                gtk_widget_set_sensitive(toggle_button_usd, TRUE);
+                func_listen_ref = g_timeout_add(50, listen_for_data, G_OBJECT(widget));
+	            func_update_ref = g_timeout_add(150, update_labels, G_OBJECT(widget));
+            }
+        }
 	} else {
 	    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle_button_usd))) {
 	        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_button_usd), FALSE);
