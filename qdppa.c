@@ -81,8 +81,8 @@ gboolean init_usb_server() {
     int i = 0;
     char out[1024];
 
-    //fp = popen("/home/debian/usb/usb_test.py", "r");
-    fp = popen("ls -a /etc/", "r");
+    fp = popen("/home/debian/usb/usb_test.py", "r");
+    //fp = popen("ls -a /etc/", "r");
     
     if (fp == NULL)
         return FALSE;
