@@ -23,6 +23,10 @@
 #define MEMORY_FILE_PATH    "/media/MICROSD/"
 //#define MEMORY_FILE_PATH    "/home/abdulrahman/Dev/QDPPA-CheckOff/"
 
+#define USB_COMMAND         "/home/debian/usb/usb_test.py"
+//#define USB_COMMAND         "/home/abdulrahman/Dev/socket/server.py"
+
+
 struct value {
     gchar *power;
     gchar *voltage;
@@ -76,29 +80,48 @@ gboolean init_connection() {
     return TRUE;
 }
 
+gboolean data_ready(GIOChannel *channel, GIOCondition cond, gpointer data) {
+    FILE *fp = data;
+    char line[1024];
+    
+    if (fgets(line, sizeof(line), fp)) {
+        printf("%s\n", line);
+        //gtk_text_buffer_get_end_iter (buffer, &iter);             
+        //gtk_text_buffer_insert (buffer, &iter, line, -1);
+    } else {
+        fclose(fp);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 gboolean init_usb_server() {
-    FILE *fp;
+    FILE *fp = NULL;
     int i = 0;
     char out[1024];
 
-    fp = popen("/home/debian/usb/usb_test.py", "r");
-    //fp = popen("ls -a /etc/", "r");
+    fp = popen(USB_COMMAND, "r");
     
     if (fp == NULL)
         return FALSE;
+        
+    GIOChannel *channel = g_io_channel_unix_new(fileno(fp));
+    g_io_channel_init(channel);
+    g_io_add_watch(channel, G_IO_IN, data_ready, fp);
 
     /* Read the output a line at a time or if it reaches 5 lines */
-    while (fgets(out, sizeof(out)-1, fp) != NULL && i < 6) {
-        if (g_ascii_strncasecmp(out, "Listening for incoming connections...", 37) == 0) {
-            pclose(fp);
-            return TRUE;
-        }
-        i++;
-    }
+    //while (fgets(out, sizeof(out)-1, fp) != NULL && i < 6) {
+        //printf("%s\n", out);
+        //if (g_ascii_strncasecmp(out, "Listening", 9) == 0) {
+        //    pclose(fp);
+        //    return TRUE;
+        //}
+        //i++;
+    //}
 
     /* close */
-    pclose(fp);
-    return FALSE;
+    //pclose(fp);
+    return TRUE;
 }
 
 void send_test(gchar *command) {
